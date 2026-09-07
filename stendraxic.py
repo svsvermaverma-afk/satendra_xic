@@ -8,12 +8,11 @@ st.set_page_config(
 
 st.title("📊 Student Statistics & Filter Dashboard")
 
-# 1. फ़ाइल लोड करने का ऑटोमैटिक सिस्टम
+# 1. फ़ाइल लोड करने का सिस्टम
 uploaded_file = st.sidebar.file_uploader(
     "नई Excel फ़ाइल अपलोड करें (Optional)", type=["xlsx", "xls"]
 )
 
-# फ़ोल्डर में मौजूद संभावित एक्सेल फाइलें चेक करें
 default_files = [
     "Class XI C, 2026-27_2.xlsx",
     "Class XI C, 2026-27.xlsx",
@@ -102,7 +101,7 @@ def load_data(file_source):
   df = pd.read_excel(file_source)
   df.columns = df.columns.astype(str).str.strip()
 
-  # Category क्लीनिंग
+  # Category क्लीनिंग (GEN, OBC, SC, ST)
   cat_cols = [c for c in df.columns if c.upper() in ["CAT.", "CAT", "CATEGORY"]]
   cat_col = cat_cols[0] if cat_cols else None
   if cat_col:
@@ -121,6 +120,25 @@ def load_data(file_source):
     )
   else:
     df["OCCUPATION_CLEAN"] = "-"
+
+  # Religion क्लीनिंग (H -> Hindu, M -> Muslim, Ch -> Christian)
+  rel_cols = [c for c in df.columns if "RELIGION" in c.upper()]
+  if rel_cols:
+    rel_map = {
+        "H": "Hindu (H)",
+        "M": "Muslim (M)",
+        "CH": "Christian (Ch)",
+        "CHRISTIAN": "Christian (Ch)",
+        "HINDU": "Hindu (H)",
+        "MUSLIM": "Muslim (M)",
+    }
+    cleaned_rel = df[rel_cols[0]].astype(str).str.strip().str.upper()
+    df["RELIGION_CLEAN"] = cleaned_rel.map(rel_map).fillna(
+        df[rel_cols[0]].astype(str).str.strip()
+    )
+    df["RELIGION_CLEAN"] = df["RELIGION_CLEAN"].replace("nan", "-")
+  else:
+    df["RELIGION_CLEAN"] = "-"
 
   # Gender क्लीनिंग (Boy / Girl)
   gender_cols = [c for c in df.columns if c.upper() in ["GENDER", "SEX"]]
@@ -145,71 +163,91 @@ try:
 
   st.sidebar.header("🔍 फ़िल्टर (Filters)")
 
-  # 1. Gender Dropdown (Boy / Girl)
+  # 1. Gender Dropdown
   gender_options = ["All"] + sorted(
       [x for x in df["GENDER_CLEAN"].unique() if x != "-"]
   )
-  selected_gender = st.sidebar.selectbox("Gender:", gender_options)
+  selected_gender = st.sidebar.selectbox("Gender (Boy/Girl):", gender_options)
 
-  # 2. Category Dropdown (GEN / OBC / SC / ST)
+  # 2. Category Dropdown
   cat_options = ["All"] + sorted(
       [x for x in df["CAT_CLEAN"].unique() if x != "-"]
   )
-  selected_cat = st.sidebar.selectbox("Category (CAT.):", cat_options)
+  selected_cat = st.sidebar.selectbox("Category (OBC/SC/ST/GEN):", cat_options)
 
-  # 3. Occupation Dropdown (HE / HS / OTH)
+  # 3. Religion Dropdown (H / M / Ch)
+  rel_options = ["All"] + sorted(
+      [x for x in df["RELIGION_CLEAN"].unique() if x != "-"]
+  )
+  selected_rel = st.sidebar.selectbox(
+      "Religion (Hindu/Muslim/Christian):", rel_options
+  )
+
+  # 4. Occupation Dropdown
   occ_options = ["All"] + sorted(
       [x for x in df["OCCUPATION_CLEAN"].unique() if x != "-"]
   )
   selected_occ = st.sidebar.selectbox("Occupation (HE/HS/OTH):", occ_options)
 
-  # डेटा फ़िल्टरिंग
+  # फ़िल्टरिंग लागू करना
   filtered_df = df.copy()
   if selected_gender != "All":
     filtered_df = filtered_df[filtered_df["GENDER_CLEAN"] == selected_gender]
   if selected_cat != "All":
     filtered_df = filtered_df[filtered_df["CAT_CLEAN"] == selected_cat]
+  if selected_rel != "All":
+    filtered_df = filtered_df[filtered_df["RELIGION_CLEAN"] == selected_rel]
   if selected_occ != "All":
     filtered_df = filtered_df[filtered_df["OCCUPATION_CLEAN"] == selected_occ]
 
-  # मुख्य स्टेटिस्टिक्स कार्ड्स
-  col1, col2, col3, col4, col5 = st.columns(5)
+  # मुख्य स्टेटिस्टिक्स कार्ड्स (Metrics)
+  col1, col2, col3, col4, col5, col6 = st.columns(6)
   col1.metric("कुल छात्र (Total)", len(df))
-  col2.metric("फ़िल्टर छात्र (Filtered)", len(filtered_df))
+  col2.metric("फ़िल्टर छात्र", len(filtered_df))
   col3.metric("Gender", selected_gender)
   col4.metric("Category", selected_cat)
-  col5.metric("Occupation", selected_occ)
+  col5.metric("Religion", selected_rel.split()[0] if selected_rel else "All")
+  col6.metric("Occupation", selected_occ)
 
   st.divider()
 
-  # सांख्यिकी ब्रेकडाउन (Statistics Breakdown)
+  # 4 अलग सांख्यिकी सारांश बॉक्स
   st.subheader("📈 सांख्यिकी सारांश (Statistics Breakdown)")
-  stat_col1, stat_col2, stat_col3 = st.columns(3)
+  stat1, stat2, stat3, stat4 = st.columns(4)
 
-  with stat_col1:
+  with stat1:
     st.write("**👦/👧 Gender वार संख्या:**")
     st.dataframe(
         df["GENDER_CLEAN"]
         .value_counts()
         .rename_axis("Gender")
-        .reset_index(name="छात्र संख्या")
+        .reset_index(name="संख्या")
     )
 
-  with stat_col2:
+  with stat2:
     st.write("**🏷️ Category वार संख्या:**")
     st.dataframe(
         df["CAT_CLEAN"].value_counts().rename_axis("Category").reset_index(
-            name="छात्र संख्या"
+            name="संख्या"
         )
     )
 
-  with stat_col3:
+  with stat3:
+    st.write("**🕉️/☪️/✝️ Religion वार संख्या:**")
+    st.dataframe(
+        df["RELIGION_CLEAN"]
+        .value_counts()
+        .rename_axis("Religion")
+        .reset_index(name="संख्या")
+    )
+
+  with stat4:
     st.write("**🏭 Occupation वार संख्या:**")
     st.dataframe(
         df["OCCUPATION_CLEAN"]
         .value_counts()
         .rename_axis("Occupation")
-        .reset_index(name="छात्र संख्या")
+        .reset_index(name="संख्या")
     )
 
   st.divider()
@@ -221,6 +259,7 @@ try:
       "STUDENT'S NAME",
       "GENDER_CLEAN",
       "FATHER'S NAME",
+      "RELIGION_CLEAN",
       "CAT.",
       original_occ_col,
       "MOB. NO.",
@@ -229,7 +268,9 @@ try:
   available_cols = [c for c in display_cols if c in filtered_df.columns]
 
   st.dataframe(
-      filtered_df[available_cols].rename(columns={"GENDER_CLEAN": "GENDER"}),
+      filtered_df[available_cols].rename(
+          columns={"GENDER_CLEAN": "GENDER", "RELIGION_CLEAN": "RELIGION"}
+      ),
       use_container_width=True,
   )
 
@@ -243,6 +284,4 @@ try:
   )
 
 except Exception as e:
-  st.error(
-      f"फ़ाइल लोड करने में त्रुटि: कृपया फ़ाइल का नाम और पाथ जांचें या साइडबार से फ़ाइल अपलोड करें। ({e})"
-  )
+  st.error(f"फ़ाइल लोड करने में त्रुटि: {e}")
