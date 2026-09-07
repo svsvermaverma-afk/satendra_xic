@@ -1,17 +1,34 @@
+import os
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Student Data Dashboard", page_icon="📊", layout="wide"
+    page_title="Student Statistics Dashboard", page_icon="📊", layout="wide"
 )
 
 st.title("📊 Student Statistics & Filter Dashboard")
 
-# Excel फ़ाइल लोड करें
+# 1. फ़ाइल लोड करने का ऑटोमैटिक सिस्टम
 uploaded_file = st.sidebar.file_uploader(
-    "Excel फ़ाइल अपलोड करें (वैकल्पिक)", type=["xlsx", "xls"]
+    "नई Excel फ़ाइल अपलोड करें (Optional)", type=["xlsx", "xls"]
 )
-file_path = uploaded_file if uploaded_file else "Class XI C, 2026-27.xlsx"
+
+# फ़ोल्डर में मौजूद संभावित एक्सेल फाइलें चेक करें
+default_files = [
+    "Class XI C, 2026-27_2.xlsx",
+    "Class XI C, 2026-27.xlsx",
+]
+selected_default = None
+for f in default_files:
+  if os.path.exists(f):
+    selected_default = f
+    break
+
+target_file = (
+    uploaded_file
+    if uploaded_file
+    else (selected_default if selected_default else "Class XI C, 2026-27_2.xlsx")
+)
 
 
 def detect_gender(name):
@@ -81,11 +98,21 @@ def detect_gender(name):
 
 
 @st.cache_data
-def load_data(path):
-  df = pd.read_excel(path)
-  df.columns = df.columns.str.strip()
+def load_data(file_source):
+  df = pd.read_excel(file_source)
+  df.columns = df.columns.astype(str).str.strip()
 
-  # 1. Occupation क्लीनिंग
+  # Category क्लीनिंग
+  cat_cols = [c for c in df.columns if c.upper() in ["CAT.", "CAT", "CATEGORY"]]
+  cat_col = cat_cols[0] if cat_cols else None
+  if cat_col:
+    df["CAT_CLEAN"] = (
+        df[cat_col].astype(str).str.strip().str.upper().replace("NAN", "-")
+    )
+  else:
+    df["CAT_CLEAN"] = "-"
+
+  # Occupation क्लीनिंग (HE / HS / OTH)
   occ_cols = [c for c in df.columns if "OCCUPATION" in c.upper()]
   occ_col = occ_cols[0] if occ_cols else None
   if occ_col:
@@ -95,15 +122,7 @@ def load_data(path):
   else:
     df["OCCUPATION_CLEAN"] = "-"
 
-  # 2. Category क्लीनिंग
-  if "CAT." in df.columns:
-    df["CAT_CLEAN"] = (
-        df["CAT."].astype(str).str.strip().str.upper().replace("NAN", "-")
-    )
-  else:
-    df["CAT_CLEAN"] = "-"
-
-  # 3. Gender (Boy / Girl) पहचान
+  # Gender क्लीनिंग (Boy / Girl)
   gender_cols = [c for c in df.columns if c.upper() in ["GENDER", "SEX"]]
   if gender_cols:
     df["GENDER_CLEAN"] = (
@@ -122,28 +141,27 @@ def load_data(path):
 
 
 try:
-  df, original_occ_col = load_data(file_path)
+  df, original_occ_col = load_data(target_file)
 
-  # Sidebar Filters
   st.sidebar.header("🔍 फ़िल्टर (Filters)")
 
-  # Gender Filter (Boy / Girl)
-  all_genders = ["All"] + sorted(
+  # 1. Gender Dropdown (Boy / Girl)
+  gender_options = ["All"] + sorted(
       [x for x in df["GENDER_CLEAN"].unique() if x != "-"]
   )
-  selected_gender = st.sidebar.selectbox("Gender (Boy/Girl):", all_genders)
+  selected_gender = st.sidebar.selectbox("Gender:", gender_options)
 
-  # Category Filter (GEN, OBC, SC, ST)
-  all_cats = ["All"] + sorted(
+  # 2. Category Dropdown (GEN / OBC / SC / ST)
+  cat_options = ["All"] + sorted(
       [x for x in df["CAT_CLEAN"].unique() if x != "-"]
   )
-  selected_cat = st.sidebar.selectbox("Category (CAT.):", all_cats)
+  selected_cat = st.sidebar.selectbox("Category (CAT.):", cat_options)
 
-  # Occupation Filter (HE, HS, OTH)
-  all_occupations = ["All"] + sorted(
+  # 3. Occupation Dropdown (HE / HS / OTH)
+  occ_options = ["All"] + sorted(
       [x for x in df["OCCUPATION_CLEAN"].unique() if x != "-"]
   )
-  selected_occ = st.sidebar.selectbox("Occupation (HE/HS/OTH):", all_occupations)
+  selected_occ = st.sidebar.selectbox("Occupation (HE/HS/OTH):", occ_options)
 
   # डेटा फ़िल्टरिंग
   filtered_df = df.copy()
@@ -154,17 +172,17 @@ try:
   if selected_occ != "All":
     filtered_df = filtered_df[filtered_df["OCCUPATION_CLEAN"] == selected_occ]
 
-  # मुख्य स्टेटिस्टिक्स (Key Metrics)
+  # मुख्य स्टेटिस्टिक्स कार्ड्स
   col1, col2, col3, col4, col5 = st.columns(5)
   col1.metric("कुल छात्र (Total)", len(df))
-  col2.metric("फ़िल्टर छात्र", len(filtered_df))
-  col3.metric("चुना गया Gender", selected_gender)
-  col4.metric("चुनी गई Category", selected_cat)
-  col5.metric("चुना गया Occupation", selected_occ)
+  col2.metric("फ़िल्टर छात्र (Filtered)", len(filtered_df))
+  col3.metric("Gender", selected_gender)
+  col4.metric("Category", selected_cat)
+  col5.metric("Occupation", selected_occ)
 
   st.divider()
 
-  # सांख्यिकी सारांश (Breakdown Columns)
+  # सांख्यिकी ब्रेकडाउन (Statistics Breakdown)
   st.subheader("📈 सांख्यिकी सारांश (Statistics Breakdown)")
   stat_col1, stat_col2, stat_col3 = st.columns(3)
 
@@ -174,14 +192,14 @@ try:
         df["GENDER_CLEAN"]
         .value_counts()
         .rename_axis("Gender")
-        .reset_index(name="संख्या")
+        .reset_index(name="छात्र संख्या")
     )
 
   with stat_col2:
     st.write("**🏷️ Category वार संख्या:**")
     st.dataframe(
         df["CAT_CLEAN"].value_counts().rename_axis("Category").reset_index(
-            name="संख्या"
+            name="छात्र संख्या"
         )
     )
 
@@ -191,13 +209,13 @@ try:
         df["OCCUPATION_CLEAN"]
         .value_counts()
         .rename_axis("Occupation")
-        .reset_index(name="संख्या")
+        .reset_index(name="छात्र संख्या")
     )
 
   st.divider()
 
   # फ़िल्टर किया हुआ डेटा टेबल
-  st.subheader(f"📋 छात्र विवरण ({len(filtered_df)} छात्र मिले)")
+  st.subheader(f"📋 छात्र विवरण तालिका ({len(filtered_df)} रिकॉर्ड मिले)")
   display_cols = [
       "ROLL. NO",
       "STUDENT'S NAME",
@@ -210,21 +228,21 @@ try:
   ]
   available_cols = [c for c in display_cols if c in filtered_df.columns]
 
-  # कॉलम का डिस्प्ले नाम सुंदर करने के लिए
-  rename_map = {"GENDER_CLEAN": "GENDER"}
   st.dataframe(
-      filtered_df[available_cols].rename(columns=rename_map),
+      filtered_df[available_cols].rename(columns={"GENDER_CLEAN": "GENDER"}),
       use_container_width=True,
   )
 
-  # CSV डाउनलोड बटन
+  # CSV डाउनलोड
   csv_data = filtered_df.to_csv(index=False).encode("utf-8")
   st.download_button(
       label="📥 फ़िल्टर डेटा डाउनलोड करें (CSV)",
       data=csv_data,
-      file_name="filtered_students.csv",
+      file_name="filtered_students_data.csv",
       mime="text/csv",
   )
 
 except Exception as e:
-  st.error(f"फ़ाइल लोड करने में त्रुटि: {e}")
+  st.error(
+      f"फ़ाइल लोड करने में त्रुटि: कृपया फ़ाइल का नाम और पाथ जांचें या साइडबार से फ़ाइल अपलोड करें। ({e})"
+  )
